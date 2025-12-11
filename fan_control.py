@@ -8,6 +8,7 @@ import time
 import json
 import logging
 import sys
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -91,11 +92,19 @@ class FanController:
             # Setup tachometer pin with pull-up
             lgpio.gpio_claim_input(self.chip_handle, self.tach_pin, lgpio.SET_PULL_UP)
             
-            # Setup alert for tach pin (both edges)
+            # Setup alert for tach pin (rising edge for pulse counting)
             lgpio.gpio_claim_alert(
                 self.chip_handle,
                 self.tach_pin,
-                lgpio.BOTH_EDGES
+                lgpio.RISING_EDGE
+            )
+            
+            # Register callback for tachometer
+            self.callback = lgpio.callback(
+                self.chip_handle,
+                self.tach_pin,
+                lgpio.RISING_EDGE,
+                self._tach_callback
             )
             
             self.logger.info(f"GPIO initialized - PWM pin: {self.pwm_pin}, Tach pin: {self.tach_pin}")
@@ -106,8 +115,8 @@ class FanController:
     
     def _tach_callback(self, chip, gpio, level, timestamp):
         """Callback for tachometer pulses."""
-        if level == 1:  # Count rising edges only
-            self.tach_pulses += 1
+        # Count rising edges for RPM calculation
+        self.tach_pulses += 1
     
     def set_fan_speed(self, duty_cycle: int):
         """
@@ -138,7 +147,7 @@ class FanController:
     
     def read_rpm(self) -> int:
         """
-        Read fan RPM from tachometer pin.
+        Read fan RPM from tachometer pin using callback-based pulse counting.
         
         Returns:
             Fan speed in RPM
@@ -150,22 +159,18 @@ class FanController:
         self.tach_pulses = 0
         start_time = time.time()
         
-        # Count pulses for the sample time
-        while time.time() - start_time < sample_time:
-            level = lgpio.gpio_read(self.chip_handle, self.tach_pin)
-            time.sleep(0.001)  # Small delay to prevent busy waiting
-            
-            # Simple edge detection
-            if level == 1:
-                self.tach_pulses += 1
-                # Wait for falling edge
-                while lgpio.gpio_read(self.chip_handle, self.tach_pin) == 1:
-                    time.sleep(0.0001)
+        # Wait for the sample time while callbacks count pulses
+        time.sleep(sample_time)
         
-        # Calculate RPM
+        # Calculate RPM from counted pulses
         elapsed_time = time.time() - start_time
         pulses = self.tach_pulses
-        rpm = (pulses / pulses_per_rev) * (60 / elapsed_time)
+        
+        # Calculate RPM: (pulses / pulses_per_revolution) * (60 seconds / elapsed_time)
+        if pulses > 0:
+            rpm = (pulses / pulses_per_rev) * (60 / elapsed_time)
+        else:
+            rpm = 0
         
         self.last_rpm = int(rpm)
         return self.last_rpm
@@ -182,7 +187,6 @@ class FanController:
         for device in self.config['hdd_devices']:
             try:
                 # Try using hddtemp via system call
-                import subprocess
                 result = subprocess.run(
                     ['hddtemp', '-n', device],
                     capture_output=True,
@@ -297,6 +301,10 @@ class FanController:
         """Clean up GPIO resources."""
         if self.chip_handle is not None:
             try:
+                # Cancel callback
+                if hasattr(self, 'callback') and self.callback is not None:
+                    self.callback.cancel()
+                
                 # Turn off PWM
                 lgpio.tx_pwm(self.chip_handle, self.pwm_pin, 0, 0)
                 lgpio.gpiochip_close(self.chip_handle)
