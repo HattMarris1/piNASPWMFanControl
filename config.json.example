@@ -1,0 +1,35 @@
+{
+  "pwm_pin": 18,
+  "tach_pin": 23,
+  "pwm_frequency": 25000,
+  "update_interval": 5,
+  "rpm_sample_time": 2,
+  "tach_pulses_per_revolution": 2,
+  "log_level": "INFO",
+  "hdd_devices": [
+    "/dev/sda",
+    "/dev/sdb"
+  ],
+  "temperature_thresholds": [
+    {
+      "temp": 30,
+      "duty_cycle": 0
+    },
+    {
+      "temp": 35,
+      "duty_cycle": 30
+    },
+    {
+      "temp": 40,
+      "duty_cycle": 50
+    },
+    {
+      "temp": 45,
+      "duty_cycle": 70
+    },
+    {
+      "temp": 50,
+      "duty_cycle": 100
+    }
+  ]
+}
