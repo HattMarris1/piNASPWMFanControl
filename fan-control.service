@@ -1,0 +1,14 @@
+[Unit]
+Description=PWM Fan Control for Raspberry Pi 5
+After=multi-user.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/piNASPWMFanControl
+ExecStart=/usr/bin/python3 /opt/piNASPWMFanControl/fan_control.py /opt/piNASPWMFanControl/config.json
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
